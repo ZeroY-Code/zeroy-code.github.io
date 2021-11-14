@@ -280,7 +280,39 @@
                 <!--<div class="toc-entry-content"><!-- 套嵌目录使用（主要为了支援评论）-->
                 
                 <div class="entry-content">
-                    <h1 id="Brute-Force-暴力破解"><a href="#Brute-Force-暴力破解" class="headerlink" title="Brute Force(暴力破解)"></a>Brute Force(暴力破解)</h1><h2 id="Low"><a href="#Low" class="headerlink" title="Low"></a>Low</h2><h3 id="思路"><a href="#思路" class="headerlink" title="思路"></a>思路</h3><p>通过f12抓取登录请求，采用python伪造登录请求并使用密码词典进行爆破</p>
+                    <h1 id="Brute-Force-暴力破解"><a href="#Brute-Force-暴力破解" class="headerlink" title="Brute Force(暴力破解)"></a>Brute Force(暴力破解)</h1><h2 id="Low"><a href="#Low" class="headerlink" title="Low"></a>Low</h2><h3 id="源码分析"><a href="#源码分析" class="headerlink" title="源码分析"></a>源码分析</h3><pre><code class="php">&lt;?php
+if( isset( $_GET[ &#39;Login&#39; ] ) ) &#123;
+    // Get username
+    $user = $_GET[ &#39;username&#39; ];
+
+    // Get password
+    $pass = $_GET[ &#39;password&#39; ];
+    $pass = md5( $pass );
+
+    // Check the database
+    $query  = &quot;SELECT * FROM `users` WHERE user = &#39;$user&#39; AND password = &#39;$pass&#39;;&quot;;
+    $result = mysqli_query($GLOBALS[&quot;___mysqli_ston&quot;],  $query ) or die( &#39;&lt;pre&gt;&#39; . ((is_object($GLOBALS[&quot;___mysqli_ston&quot;])) ? mysqli_error($GLOBALS[&quot;___mysqli_ston&quot;]) : (($___mysqli_res = mysqli_connect_error()) ? $___mysqli_res : false)) . &#39;&lt;/pre&gt;&#39; );
+
+    if( $result &amp;&amp; mysqli_num_rows( $result ) == 1 ) &#123;
+        // Get users details
+        $row    = mysqli_fetch_assoc( $result );
+        $avatar = $row[&quot;avatar&quot;];
+
+        // Login successful
+        echo &quot;&lt;p&gt;Welcome to the password protected area &#123;$user&#125;&lt;/p&gt;&quot;;
+        echo &quot;&lt;img src=\&quot;&#123;$avatar&#125;\&quot; /&gt;&quot;;
+    &#125;
+    else &#123;
+        // Login failed
+        echo &quot;&lt;pre&gt;&lt;br /&gt;Username and/or password incorrect.&lt;/pre&gt;&quot;;
+    &#125;
+
+    ((is_null($___mysqli_res = mysqli_close($GLOBALS[&quot;___mysqli_ston&quot;]))) ? false : $___mysqli_res);
+&#125;
+?&gt;
+</code></pre>
+<p>可以看到获取到前台提交的用户名密码后直接经过数据库查询，没有做任何的防爆破机制，所以我们直接抓包尝试爆破</p>
+<h3 id="思路"><a href="#思路" class="headerlink" title="思路"></a>思路</h3><p>通过f12抓取登录请求，采用python伪造登录请求并使用密码词典进行爆破</p>
 <h3 id="代码"><a href="#代码" class="headerlink" title="代码"></a>代码</h3><pre><code class="python">import requests
 
 def sendRequest(pwd):
